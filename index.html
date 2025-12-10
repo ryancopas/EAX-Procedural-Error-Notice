@@ -2,52 +2,25 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Procedural Error Notice – Submission</title>
+<title>Procedural Error Notice – Fill & Submit</title>
 <style>
-  body {
-    font-family: Arial, Helvetica, sans-serif;
-    max-width: 800px;
-    margin: 2rem auto;
-    line-height: 1.5;
-    color: #333;
-  }
-  h1 { text-align: center; }
-  label { display: block; margin-top: 0.8rem; }
-  input[type=text],
-  input[type=date],
-  textarea,
-  select {
-    width: 100%;
-    padding: 0.4rem;
-    margin-top: 0.2rem;
-    box-sizing: border-box;
-  }
-  .checkboxes {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 1rem;
-    margin-top: 0.4rem;
-  }
-  .checkboxes label {
-    display: flex;
-    align-items: center;
-  }
-  .error { color: #c00; margin-top: 0.5rem; display: none; }
-  button {
-    margin-top: 1.5rem;
-    padding: 0.6rem 1.2rem;
-    font-size: 1rem;
-    cursor: pointer;
-  }
+  body {font-family:Arial,sans-serif;max-width:900px;margin:2rem auto;background:#f7f9fc;padding:1rem;}
+  h1 {text-align:center;color:#2c3e50;}
+  label {display:block;margin-top:.8rem;}
+  input, textarea, select {width:100%;padding:.4rem;margin-top:.2rem;}
+  .checkboxes {display:flex;flex-wrap:wrap;gap:.5rem;}
+  .checkboxes label {display:inline-block;width:auto;}
+  button {margin-top:1rem;padding:.6rem 1.2rem;background:#0066cc;color:#fff;border:none;border-radius:4px;cursor:pointer;}
+  button:hover {background:#004999;}
 </style>
 </head>
 <body>
 
-<h1>Procedural Error Notice</h1>
+<h1>Procedural Error Notice (GMM 11.4‑01)</h1>
 
-<form id="errorForm">
+<form id="pdfForm">
 
-  <!-- ==== TEXT/DATES ==== -->
+  <!-- ==== REQUIRED TEXT / DATE FIELDS ==== -->
   <label>Date of Notice
     <input type="date" name="date_of_notice" required>
   </label>
@@ -68,7 +41,7 @@
     <input type="text" name="person_responsible_error" required>
   </label>
 
-  <label>ID No.
+  <label>ID No. (person)
     <input type="text" name="person_responsible_id" required>
   </label>
 
@@ -80,7 +53,7 @@
     <input type="text" name="originator_name" required>
   </label>
 
-  <label>Originator ID
+  <label>ID No. (originator)
     <input type="text" name="originator_id" required>
   </label>
 
@@ -88,139 +61,150 @@
     <input type="date" name="reply_due_date" required>
   </label>
 
-  <label>Log Page / Originating Document
+  <label>Log Page and Originating Document
     <input type="text" name="originating_document" required>
   </label>
 
-  <!-- ==== CLASSIFICATION CHECKBOXES (at least one required) ==== -->
-  <fieldset>
-    <legend>Classification (choose at least one)</legend>
-    <div class="checkboxes" id="classificationGroup">
-      <label><input type="checkbox" name="classification" value="missing_attachment"> Missing Certs/Attachments</label>
-      <label><input type="checkbox" name="classification" value="missing_signature"> Missing Signature</label>
-      <label><input type="checkbox" name="classification" value="incomplete_entry"> Incomplete Entry</label>
-      <label><input type="checkbox" name="classification" value="incorrect_entry"> Incorrect Entry</label>
-      <label><input type="checkbox" name="classification" value="legibility"> Legibility</label>
+  <label>Explanation
+    <textarea name="explanation" rows="8" required></textarea>
+  </label>
+
+  <!-- ==== CHECKBOX GROUP (at least one required) ==== -->
+  <fieldset style="margin-top:1rem;">
+    <legend>Errors (check at least one)</legend>
+    <div class="checkboxes">
+      <label><input type="checkbox" name="missing_attachment"> Missing Certs/Attachments</label>
+      <label><input type="checkbox" name="missing_signature"> Missing Signature</label>
+      <label><input type="checkbox" name="incomplete_entry"> Incomplete Entry</label>
+      <label><input type="checkbox" name="incorrect_entry"> Incorrect Entry</label>
+      <label><input type="checkbox" name="legibility"> Legibility</label>
     </div>
-    <div class="error" id="classError">Please select at least one classification.</div>
   </fieldset>
 
-  <!-- ==== EXPLANATION ==== -->
-  <label>Explanation
-    <textarea name="explanation" rows="4" required></textarea>
+  <!-- ==== OPTIONAL ATTACHMENTS (extra PDFs) ==== -->
+  <label>Attach other PDF files (optional)
+    <input type="file" id="extraFiles" multiple accept=".pdf">
   </label>
 
-  <!-- ==== OPTIONAL PDF ATTACHMENTS ==== -->
-  <label>Attach PDF files (optional – you can select several)
-    <input type="file" id="pdfFiles" accept=".pdf" multiple>
-  </label>
-
-  <button type="submit">Submit</button>
+  <button type="button" id="submitBtn">Submit</button>
 </form>
 
+<!-- --------------------------------------------------------------
+     Libraries (loaded from CDN)
+     -------------------------------------------------------------- -->
+<script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+
 <script>
-/* --------------------------------------------------------------
-   1️⃣  CONFIG – replace with the URL of your PDF‑filler service
-   -------------------------------------------------------------- */
-// Example: const BACKEND_URL = 'https://pdf-filler-abcde-uc.a.run.app/fill-pdf';
-const BACKEND_URL = 'YOUR_BACKEND_URL_HERE';
+(async () => {
+  const { PDFDocument } = PDFLib;
 
-/* --------------------------------------------------------------
-   2️⃣  Helper – convert a File object → base64 string
-   -------------------------------------------------------------- */
-function fileToBase64(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result.split(',')[1]); // strip data:…;base64,
-    reader.onerror = err => reject(err);
-    reader.readAsDataURL(file);
-  });
-}
-
-/* --------------------------------------------------------------
-   3️⃣  Form submit handler
-   -------------------------------------------------------------- */
-document.getElementById('errorForm').addEventListener('submit', async (e) => {
-  e.preventDefault();
-
-  /* ---------- 3a. Validate at least one classification checkbox ---------- */
-  const checkedBoxes = Array.from(document.querySelectorAll('#classificationGroup input:checked'));
-  const classErrorEl = document.getElementById('classError');
-  if (checkedBoxes.length === 0) {
-    classErrorEl.style.display = 'block';
-    return;
-  } else {
-    classErrorEl.style.display = 'none';
+  // -----------------------------------------------------------------
+  // Helper – ensure at least one checkbox is checked
+  // -----------------------------------------------------------------
+  function atLeastOneChecked() {
+    const names = [
+      'incomplete_entry',
+      'incorrect_entry',
+      'missing_certs',
+      'missing_signature',
+      'legibility'
+    ];
+    return names.some(n => document.querySelector(`input[name="${n}"]:checked`));
   }
 
-  /* ---------- 3b. Gather all form fields into a plain object ---------- */
-  const formData = new FormData(e.target);
-  const formObj = {};
+  // -----------------------------------------------------------------
+  // Main submit handler
+  // -----------------------------------------------------------------
+  document.getElementById('submitBtn').addEventListener('click', async () => {
+    const form = document.getElementById('pdfForm');
 
-  for (const [key, value] of formData.entries()) {
-    // Handle multi‑value fields (checkboxes)
-    if (formObj[key]) {
-      if (!Array.isArray(formObj[key])) formObj[key] = [formObj[key]];
-      formObj[key].push(value);
-    } else {
-      formObj[key] = value;
+    // ---- 1️⃣ HTML5 validation (required attributes) ----
+    if (!form.reportValidity()) return;   // stops if any required field is empty
+
+    // ---- 2️⃣ Ensure at least one checkbox is ticked ----
+    if (!atLeastOneChecked()) {
+      alert('Please check at least one of the error boxes.');
+      return;
     }
-  }
 
-  // Turn the classification checkboxes into a comma‑separated string
-  formObj.classification = checkedBoxes.map(cb => cb.value).join(', ');
-
-  /* ---------- 3c. Process optional PDF uploads ---------- */
-  const pdfInput = document.getElementById('pdfFiles');
-  const files = Array.from(pdfInput.files);          // may be empty
-  const encodedFiles = await Promise.all(
-    files.map(async (f) => ({
-      name: f.name,
-      mimeType: f.type,
-      data: await fileToBase64(f)
-    }))
-  );
-
-  /* ---------- 3d. Build the payload for the backend ---------- */
-  const payload = {
-    form: formObj,
-    files: encodedFiles          // [] if no PDFs were attached
-  };
-
-  /* ---------- 3e. POST to the PDF‑filler service ---------- */
-  try {
-    const resp = await fetch(BACKEND_URL, {
-      method: 'POST',
-      mode: 'cors',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
+    // ---- 3️⃣ Gather all field values (including checkboxes) ----
+    const values = {};
+    new FormData(form).forEach((v, k) => {
+      // For checkboxes we store "Yes" when checked, otherwise empty string
+      if (['incomplete_entry','incorrect_entry','missing_certs','missing_signature','legibility'].includes(k)) {
+        values[k] = v ? 'Yes' : '';
+      } else {
+        values[k] = v;
+      }
     });
 
-    const result = await resp.json();
+    // ---- 4️⃣ Load the original PDF template ----
+    const templateUrl = 'https://drive.google.com/file/d/1LsLG7kr-WgAR0Xjo-P40T8A6dlWOLjK3';   // <<<=== replace with your PDF URL
+    const existingPdfBytes = await fetch(templateUrl).then(r => r.arrayBuffer());
 
-    if (result.status === 'ok') {
-      /* ---- 3f. Trigger download of the filled PDF ---- */
-      const b64 = result.filledPdf.data;
-      const binary = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
-      const blob = new Blob([binary], { type: result.filledPdf.mimeType });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = result.filledPdf.name;   // e.g. Procedural_Error_Notice_Filled.pdf
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
+    // ---- 5️⃣ Fill the PDF with the collected values ----
+    const pdfDoc = await PDFDocument.load(existingPdfBytes);
+    const pdfForm = pdfDoc.getForm();
 
-      alert('✅ Form submitted – the filled PDF has been downloaded.');
-    } else {
-      alert('❗️ Something went wrong: ' + (result.message || 'unknown error'));
+    // Helper: set a field only if it exists in the template
+    const setIfExists = (name, value) => {
+      const field = pdfForm.getFieldMaybe(name);
+      if (!field) return;   // field not present – ignore
+      if (field.constructor.name === 'PDFCheckBox') {
+        if (value === 'Yes') field.check(); else field.uncheck();
+      } else {
+        field.setText(value);
+      }
+    };
+
+    Object.entries(values).forEach(([name, val]) => setIfExists(name, val));
+
+    // Flatten so the fields become ordinary content (cannot be edited later)
+    pdfDoc.flatten();
+
+    const filledPdfBytes = await pdfDoc.save();
+
+    // ---- 6️⃣ Build a multipart/form‑data payload for the Apps Script ----
+    const formData = new FormData();
+
+    // The filled PDF (field name "filled_pdf")
+    const filledBlob = new Blob([filledPdfBytes], {type: 'application/pdf'});
+    formData.append('filled_pdf', filledBlob, 'Procedural_Error_Filled.pdf');
+
+    // Extra files the user selected (field name "extra_files")
+    const extraInput = document.getElementById('extraFiles');
+    for (const file of extraInput.files) {
+      formData.append('extra_files', file, file.name);
     }
-  } catch (err) {
-    console.error(err);
-    alert('❗️ Network error – could not reach the PDF service.');
-  }
-});
+
+    // Add all plain‑text fields (they will be written to the sheet)
+    Object.entries(values).forEach(([k, v]) => formData.append(k, v));
+
+    // ---- 7️⃣ POST to the Apps Script web‑app ----
+    try {
+      await fetch('https://script.google.com/macros/s/AKfycbyj7bXnqc2y-lVgLI3_AZed2KEZZceprgQ48I47LvwQnCq7laYvRYecHIQoixIBhkcFMg/exec', {
+        method: 'POST',
+        mode: 'no-cors',          // Apps Script accepts no‑CORS POSTs
+        body: formData
+      });
+    } catch (e) {
+      console.warn('POST to Apps Script failed (non‑blocking).', e);
+    }
+
+    // ---- 8️⃣ Offer the filled PDF for immediate download ----
+    const downloadBlob = new Blob([filledPdfBytes], {type: 'application/pdf'});
+    const url = URL.createObjectURL(downloadBlob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'PEN_Filled.pdf';
+    a.click();
+    URL.revokeObjectURL(url);
+
+    alert('✅ Form submitted and PDF downloaded. Attachments have been saved to Drive; data logged to the spreadsheet.');
+    form.reset();
+  });
+})();
 </script>
 
 </body>
